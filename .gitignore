@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local machine config (contains absolute SDK path)
+local.properties
+
+# Vendored toolchain (downloaded JDK, ~500 MB)
+.toolchain/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/*.lock
+.claude/scheduled_tasks*
+
+# OS
+.DS_Store
+Thumbs.db
