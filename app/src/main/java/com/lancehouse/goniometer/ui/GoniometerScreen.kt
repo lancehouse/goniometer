@@ -97,7 +97,6 @@ fun GoniometerScreen(
     onBackFromHistoryPressed: () -> Unit,
     onSendSessionPressed: (String) -> Unit,
     onExportSessionPressed: (String) -> Unit,
-    onSendChartsPressed: (String) -> Unit,
     onDeleteSessionPressed: (String) -> Unit,
     onEditSessionPressed: (String) -> Unit,
     onEditingLabelChanged: (Int, String) -> Unit,
@@ -157,7 +156,6 @@ fun GoniometerScreen(
                 onViewSessionPressed = onViewSessionPressed,
                 onSendSessionPressed = onSendSessionPressed,
                 onExportSessionPressed = onExportSessionPressed,
-                onSendChartsPressed = onSendChartsPressed,
                 onDeleteSessionPressed = onDeleteSessionPressed,
                 onEditSessionPressed = onEditSessionPressed,
             )
@@ -841,7 +839,6 @@ private fun HistoryScreen(
     onViewSessionPressed: (String) -> Unit,
     onSendSessionPressed: (String) -> Unit,
     onExportSessionPressed: (String) -> Unit,
-    onSendChartsPressed: (String) -> Unit,
     onDeleteSessionPressed: (String) -> Unit,
     onEditSessionPressed: (String) -> Unit,
 ) {
@@ -873,7 +870,6 @@ private fun HistoryScreen(
                         onRowPressed = { onViewSessionPressed(meta.sessionName) },
                         onSendPressed = { onSendSessionPressed(meta.sessionName) },
                         onExportPressed = { onExportSessionPressed(meta.sessionName) },
-                        onChartsPressed = { onSendChartsPressed(meta.sessionName) },
                         onDeletePressed = { onDeleteSessionPressed(meta.sessionName) },
                         onEditPressed = { onEditSessionPressed(meta.sessionName) },
                     )
@@ -891,7 +887,6 @@ private fun SavedSessionRow(
     onRowPressed: () -> Unit,
     onSendPressed: () -> Unit,
     onExportPressed: () -> Unit,
-    onChartsPressed: () -> Unit,
     onDeletePressed: () -> Unit,
     onEditPressed: () -> Unit,
 ) {
@@ -951,14 +946,6 @@ private fun SavedSessionRow(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
                 Text(if (exported) "EXPORTED ✓" else "EXPORT (USB)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            }
-            Box(
-                modifier = Modifier
-                    .background(Color(0xFF00838F), shape = RoundedCornerShape(12.dp))
-                    .clickable(onClick = onChartsPressed)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) {
-                Text("CHARTS", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             }
             Box(
                 modifier = Modifier

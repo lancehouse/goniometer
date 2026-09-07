@@ -149,7 +149,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 onBackFromHistoryPressed = { showHistory = false },
                 onSendSessionPressed = { sessionName -> doSendSession(sessionName) },
                 onExportSessionPressed = { sessionName -> doExportSession(sessionName) },
-                onSendChartsPressed = { sessionName -> doSendCharts(sessionName) },
                 onDeleteSessionPressed = { sessionName -> doDeleteSession(sessionName) },
                 onEditSessionPressed = { sessionName -> doOpenSessionEdit(sessionName) },
                 onEditingLabelChanged = { index, newLabel -> doUpdateEditingLabel(index, newLabel) },
@@ -348,13 +347,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         DownloadsExporter.exportToDownloads(this, meta.file) ?: return
         SessionStorage.markExported(this, sessionName)
         exportedSessionNames = exportedSessionNames + sessionName
-    }
-
-    /** Hands the session's chart PNGs to KDE Connect as image files (re-rendering them if an older session predates charts). */
-    private fun doSendCharts(sessionName: String) {
-        val meta = savedSessions.find { it.sessionName == sessionName } ?: return
-        val charts = SessionStorage.ensureChartFiles(this, meta)
-        if (charts.isNotEmpty()) SessionSharing.sendCharts(this, charts)
     }
 
     private fun doDeleteSession(sessionName: String) {
