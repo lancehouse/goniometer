@@ -36,9 +36,11 @@ import java.util.zip.ZipOutputStream
  *       primary_channel (0..2), primary_channel_label ("Range A/B/C" — neutral,
  *         no anatomical plane is claimed), primary_range_deg,
  *       deficit_to_full_deg (180 − primary), secondary_ranges_deg [n,n],
- *       peak_deg, peak_t_ms, total_angular_sweep_deg (gimbal-lock-immune
- *         cross-check), mark_count, sample_count, duration_ms,
- *       chart_png (zip-relative path)
+ *       min_deg/min_t_ms + max_deg/max_t_ms (primary-channel extremes vs
+ *         baseline — motion can go either way from 0, so both are reported;
+ *         primary_range_deg == max − min), total_angular_sweep_deg
+ *         (gimbal-lock-immune cross-check), mark_count, sample_count,
+ *         duration_ms, chart_png (zip-relative path)
  *     }]
  *   }
  * Consumers match a session on patient_code + created_ms; the joint/plane is
@@ -118,8 +120,10 @@ object BundleExporter {
             put("primary_range_deg", round1(r.primaryRangeDeg))
             put("deficit_to_full_deg", round1(r.deficitToFullDeg))
             put("secondary_ranges_deg", JSONArray(r.secondaryChannels().map { round1(it.second) }))
-            put("peak_deg", round1(peak.maxV))
-            put("peak_t_ms", peak.maxTMs)
+            put("min_deg", round1(peak.minV))
+            put("min_t_ms", peak.minTMs)
+            put("max_deg", round1(peak.maxV))
+            put("max_t_ms", peak.maxTMs)
             put("total_angular_sweep_deg", round1(sweep))
             put("mark_count", r.marks.size)
             put("sample_count", r.samples.size)
