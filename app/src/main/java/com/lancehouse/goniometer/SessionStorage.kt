@@ -53,59 +53,13 @@ object SessionStorage {
     private fun sessionsDir(context: Context): File =
         File(context.filesDir, "sessions").apply { mkdirs() }
 
-    /** Separate from [sessionsDir] so export copies never clutter the primary listing. */
+    /** Separate from [sessionsDir] so export artifacts never clutter the primary listing. Covered by res/xml/file_paths.xml's `export/` root for FileProvider. */
     private fun exportDir(context: Context): File =
         File(context.filesDir, "export").apply { mkdirs() }
 
-    /** Per-session folder under [exportDir] holding the rendered chart PNGs (export only). Covered by res/xml/file_paths.xml's `export/` root. */
-    private fun chartsDir(context: Context, sessionName: String): File =
-        File(exportDir(context), sessionName).apply { mkdirs() }
-
-    /** The rendered chart PNGs for a saved session, name-sorted (== measurement order). */
-    fun chartFilesFor(context: Context, sessionName: String): List<File> =
-        File(exportDir(context), sessionName)
-            .listFiles { f -> f.isFile && f.name.endsWith(".png") }
-            ?.sortedBy { it.name } ?: emptyList()
-
-    /**
-     * Materialises the chart PNGs for a saved session if they aren't already on
-     * disk, rendering them from the stored samples. Called from the export
-     * actions only — never on the save path.
-     */
-    fun ensureChartFiles(context: Context, meta: SavedSessionMeta): List<File> {
-        chartFilesFor(context, meta.sessionName).let { if (it.isNotEmpty()) return it }
-        val cluster = loadCluster(meta) ?: return emptyList()
-        val dir = chartsDir(context, meta.sessionName)
-        cluster.forEachIndexed { i, m ->
-            try {
-                File(dir, chartFileName(meta.sessionName, i, m)).writeBytes(ChartRenderer.renderPng(m, meta.sessionName))
-            } catch (e: Exception) {
-                // best-effort
-            }
-        }
-        return chartFilesFor(context, meta.sessionName)
-    }
-
-    /**
-     * Drops any rendered chart PNGs for a session so the next export re-renders
-     * them. Called after a label edit (the label is drawn into the image) —
-     * cheap, does no rendering on the save path.
-     */
-    fun invalidateChartFiles(context: Context, sessionName: String) {
-        File(exportDir(context), sessionName).deleteRecursively()
-    }
-
-    /**
-     * PNG filename for one measurement — the contract the future pab-side
-     * importer parses: `<sessionName>_<NN>_<slug>_<AROM|PROM>.png`, NN 1-based
-     * zero-padded, slug = label lowercased with non-alphanumerics collapsed to
-     * '-' (empty label → "unlabeled").
-     */
-    fun chartFileName(sessionName: String, index0: Int, m: CapturedMeasurement): String =
-        "${sessionName}_${"%02d".format(index0 + 1)}_${slug(m.label)}_${m.romType.name}.png"
-
-    private fun slug(s: String): String =
-        s.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "unlabeled" }
+    /** The export bundle zip for a session (built on demand by [BundleExporter]). */
+    fun bundleFileFor(context: Context, sessionName: String): File =
+        File(exportDir(context), "$sessionName.gonio.zip")
 
     /** Writes [text] to [file] atomically: fully write a sibling `.tmp`, then rename over the target. A crash mid-write leaves the old file (or the recoverable `.tmp`) intact, never a truncated target. */
     private fun atomicWrite(file: File, text: String) {
@@ -147,12 +101,14 @@ object SessionStorage {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getStringSet(KEY_EXPORTED_SESSIONS, emptySet()) ?: emptySet()
 
-    /** Deletes a saved session file (and any stale temp / export copies) and forgets its sent/exported state. */
+    /** Deletes a saved session file (and any temp / export artifacts) and forgets its sent/exported state. */
     fun deleteSession(context: Context, meta: SavedSessionMeta) {
         meta.file.delete()
         File(meta.file.parentFile, "${meta.file.name}.tmp").delete()
-        File(exportDir(context), "${meta.sessionName}.gonio.json").delete()
-        File(exportDir(context), meta.sessionName).deleteRecursively() // rendered chart PNGs
+        bundleFileFor(context, meta.sessionName).delete()
+        File(exportDir(context), "${meta.sessionName}.gonio.zip.tmp").delete()
+        File(exportDir(context), "${meta.sessionName}.gonio.json").delete() // legacy JSON-only export
+        File(exportDir(context), meta.sessionName).deleteRecursively() // legacy loose chart PNGs
 
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
@@ -263,18 +219,6 @@ object SessionStorage {
             .putStringSet(KEY_SENT_SESSIONS, sentSessionNames(context) - sessionName)
             .putStringSet(KEY_EXPORTED_SESSIONS, exportedSessionNames(context) - sessionName)
             .apply()
-    }
-
-    /**
-     * Copies [sessionFile] to a `.gonio.json` companion in a dedicated export
-     * folder and returns it. The double extension lets the laptop-side
-     * GSConnect router distinguish goniometer exports from any other file that
-     * might land in the shared inbox.
-     */
-    fun exportFileFor(context: Context, sessionFile: File): File {
-        val export = File(exportDir(context), "${sessionFile.nameWithoutExtension}.gonio.json")
-        sessionFile.copyTo(export, overwrite = true)
-        return export
     }
 
     /**

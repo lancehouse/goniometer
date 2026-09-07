@@ -79,6 +79,7 @@ fun GoniometerScreen(
     viewingSessionName: String?,
     viewingMeasurements: List<CapturedMeasurement>,
     viewingUnreadable: Boolean,
+    busy: Boolean,
     onStartStopPressed: () -> Unit,
     onMarkPressed: () -> Unit,
     onKeepPressed: () -> Unit,
@@ -152,6 +153,7 @@ fun GoniometerScreen(
                 savedSessions = savedSessions,
                 sentSessionNames = sentSessionNames,
                 exportedSessionNames = exportedSessionNames,
+                busy = busy,
                 onBackPressed = onBackFromHistoryPressed,
                 onViewSessionPressed = onViewSessionPressed,
                 onSendSessionPressed = onSendSessionPressed,
@@ -835,6 +837,7 @@ private fun HistoryScreen(
     savedSessions: List<SavedSessionMeta>,
     sentSessionNames: Set<String>,
     exportedSessionNames: Set<String>,
+    busy: Boolean,
     onBackPressed: () -> Unit,
     onViewSessionPressed: (String) -> Unit,
     onSendSessionPressed: (String) -> Unit,
@@ -851,6 +854,15 @@ private fun HistoryScreen(
             Text("< BACK", fontSize = 16.sp, color = Color(0xFF1565C0), modifier = Modifier.clickable(onClick = onBackPressed))
             Text("Saved sessions", fontSize = 20.sp, fontWeight = FontWeight.Medium)
             Spacer(modifier = Modifier.width(48.dp)) // balance the back label
+        }
+
+        if (busy) {
+            Text(
+                "Building bundle…",
+                fontSize = 14.sp,
+                color = Color(0xFF1565C0),
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))

@@ -65,6 +65,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private val viewingMeasurements = mutableStateListOf<CapturedMeasurement>()
     private var viewingUnreadable by mutableStateOf(false)
 
+    // True while an export bundle is being built (chart render + zip) on a
+    // background thread — shown on the history screen, gates SEND/EXPORT.
+    private var busy by mutableStateOf(false)
+
     // Filename (without extension) the cluster was last saved to, or null.
     // Shown briefly on the cluster screen, reset when the cluster changes.
     private var savedFileName by mutableStateOf<String?>(null)
@@ -131,6 +135,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 viewingSessionName = viewingSessionName,
                 viewingMeasurements = viewingMeasurements,
                 viewingUnreadable = viewingUnreadable,
+                busy = busy,
                 onStartStopPressed = { doToggleStartStop() },
                 onMarkPressed = { doMark() },
                 onKeepPressed = { doKeep() },
@@ -334,19 +339,40 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         exportedSessionNames = names.filter { SessionStorage.isExported(this, it) }.toSet()
     }
 
-    private fun doSendSession(sessionName: String) {
-        val meta = savedSessions.find { it.sessionName == sessionName } ?: return
-        SessionSharing.send(this, meta.file)
+    /** SEND: build the bundle, then hand the .gonio.zip to KDE Connect. */
+    private fun doSendSession(sessionName: String) = withBundle(sessionName) { bundle ->
+        SessionSharing.send(this, bundle)
         SessionStorage.markSent(this, sessionName)
         sentSessionNames = sentSessionNames + sessionName
     }
 
-    /** USB fallback: writes into the public Downloads folder for wifi that blocks GSConnect (see SPEC notes). */
-    private fun doExportSession(sessionName: String) {
+    /** EXPORT: build the bundle, then save it into the phone's Download/goniometer/ (USB / file-manager pickup). */
+    private fun doExportSession(sessionName: String) = withBundle(sessionName) { bundle ->
+        val ok = DownloadsExporter.exportToDownloads(
+            this, bundle, "$sessionName.gonio.zip", "application/zip",
+        ) != null
+        if (ok) {
+            SessionStorage.markExported(this, sessionName)
+            exportedSessionNames = exportedSessionNames + sessionName
+        }
+    }
+
+    /**
+     * Builds the export bundle (chart rendering + zip) off the main thread —
+     * it's a few 1600x900 bitmaps — then runs [onReady] back on the main
+     * thread. [busy] gates re-entry so a double-tap can't spawn two builds.
+     */
+    private fun withBundle(sessionName: String, onReady: (File) -> Unit) {
+        if (busy) return
         val meta = savedSessions.find { it.sessionName == sessionName } ?: return
-        DownloadsExporter.exportToDownloads(this, meta.file) ?: return
-        SessionStorage.markExported(this, sessionName)
-        exportedSessionNames = exportedSessionNames + sessionName
+        busy = true
+        Thread {
+            val bundle = runCatching { BundleExporter.buildBundle(this, meta) }.getOrNull()
+            runOnUiThread {
+                busy = false
+                if (bundle != null) onReady(bundle)
+            }
+        }.start()
     }
 
     private fun doDeleteSession(sessionName: String) {
@@ -379,7 +405,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val file = editingSessionFile ?: return
         val name = editingSessionName ?: return
         SessionStorage.updateLabels(this, file, name, editingMeasurements.toList())
-        SessionStorage.invalidateChartFiles(this, name) // labels are drawn into the PNGs
         doCloseSessionEdit()
         refreshSavedSessions()
     }
