@@ -2,6 +2,7 @@ package com.lancehouse.goniometer
 
 import android.content.Context
 import com.lancehouse.goniometer.ui.channelPeak
+import com.lancehouse.goniometer.ui.channelValue
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -27,7 +28,7 @@ import java.util.zip.ZipOutputStream
  * out. Charts are rendered here, on the export action only — never on the save
  * path.
  *
- * manifest.json schema (bundle_schema = 1):
+ * manifest.json schema (bundle_schema = 2):
  *   {
  *     bundle_schema, session_name, patient_code, created_ms, created_iso,
  *     app_version,
@@ -39,15 +40,23 @@ import java.util.zip.ZipOutputStream
  *       min_deg/min_t_ms + max_deg/max_t_ms (primary-channel extremes vs
  *         baseline — motion can go either way from 0, so both are reported;
  *         primary_range_deg == max − min), total_angular_sweep_deg
- *         (gimbal-lock-immune cross-check), mark_count, sample_count,
- *         duration_ms, chart_png (zip-relative path)
+ *         (gimbal-lock-immune cross-check), mark_count,
+ *         marks_deg [primary-channel angle at each mark, capture order —
+ *           length always == mark_count; an entry is null only if the mark
+ *           points outside the sample stream (corrupt/hand-edited file)],
+ *         sample_count, duration_ms, chart_png (zip-relative path)
  *     }]
  *   }
  * Consumers match a session on patient_code + created_ms; the joint/plane is
  * derived downstream from `label` + `rom_type`, not encoded here.
+ *
+ * Schema history:
+ *   1 → 2 (2026-09-07): added measurements[].marks_deg for the gpab
+ *     AROM/PROM value format `110 (-8->102) ; 43 ; 98`. A schema-1 bundle
+ *     (marks_deg absent) makes the consumer fall back to range-only.
  */
 object BundleExporter {
-    const val BUNDLE_SCHEMA = 1
+    const val BUNDLE_SCHEMA = 2
 
     /** Builds (or rebuilds) the bundle zip for [meta] and returns it, or null if the session can't be read. */
     fun buildBundle(context: Context, meta: SavedSessionMeta): File? {
@@ -126,6 +135,16 @@ object BundleExporter {
             put("max_t_ms", peak.maxTMs)
             put("total_angular_sweep_deg", round1(sweep))
             put("mark_count", r.marks.size)
+            put("marks_deg", JSONArray(r.marks.map { mk ->
+                // Primary-channel angle at the mark, in capture order. Position
+                // is preserved (never skipped) so marks_deg.size == mark_count;
+                // SessionState.mark() can't produce an out-of-range index for a
+                // freshly-captured session, but a loaded file might — emit null
+                // rather than crash the export.
+                if (mk.sampleIndex in r.samples.indices)
+                    round1(channelValue(r.samples[mk.sampleIndex], r.primaryChannelIndex))
+                else JSONObject.NULL
+            }))
             put("sample_count", r.samples.size)
             put("duration_ms", r.samples.lastOrNull()?.tMs ?: 0L)
             put("chart_png", "charts/${chartEntryName(index0, m)}")
