@@ -28,9 +28,11 @@ object ChartRenderer {
 
     private const val MARGIN_L = 100f
     private const val MARGIN_R = 40f
-    private const val MARGIN_T = 72f
-    private const val AXIS_H = 44f      // time-axis strip under the plot
-    private const val CAPTION_H = 150f  // caption band at the bottom
+    private const val MARGIN_T = 132f       // top band — holds the large heading row
+    private const val AXIS_H = 44f          // time-axis strip under the plot
+    private const val CAPTION_H = 176f      // caption band at the bottom
+    private const val HEADING_MAX_PX = 84f  // heading font cap; shrinks below only to fit width
+    private const val MARK_ANGLE_PX = 80f   // per-mark angle text — 2x the former headline-angle size
 
     private val COL_PRIMARY = 0xFF2E7D32.toInt()
     private val COL_SECONDARY = intArrayOf(0xFF7A96A3.toInt(), 0xFF9AA7AE.toInt())
@@ -63,17 +65,19 @@ object ChartRenderer {
         val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = COL_TEXT }
 
-        // --- Title ---
-        text.textSize = 34f
+        // --- Heading: "<Region> - <AROM|PROM>", auto-sized to fill the top row ---
+        // (session id is drawn small at the bottom-left, below the caption,
+        // so the heading owns the whole top row at print resolution.)
+        val heading = "${measurement.label.ifBlank { "(unlabelled)" }} - ${measurement.romType.name}"
+        text.textAlign = Paint.Align.LEFT
+        text.color = COL_TEXT
         text.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        c.drawText(
-            "${measurement.label.ifBlank { "(unlabelled)" }}   ·   ${measurement.romType.name}",
-            MARGIN_L, 44f, text,
-        )
+        text.textSize = HEADING_MAX_PX
+        val headingMaxW = WIDTH_PX - MARGIN_L - MARGIN_R
+        val headingW = text.measureText(heading)
+        if (headingW > headingMaxW) text.textSize = HEADING_MAX_PX * headingMaxW / headingW
+        c.drawText(heading, MARGIN_L, MARGIN_T - 30f, text)
         text.typeface = Typeface.DEFAULT
-        text.textSize = 22f
-        text.color = COL_MUTED
-        c.drawText(sessionName, MARGIN_L, MARGIN_T - 6f, text)
         text.color = COL_TEXT
 
         val plotLeft = MARGIN_L
@@ -149,20 +153,43 @@ object ChartRenderer {
             }
         }
 
-        // --- Marks ---
-        stroke.color = COL_MARK
-        stroke.strokeWidth = 2f
-        fill.color = COL_MARK
-        text.color = COL_MARK
+        // --- Marks: vertical marker + the primary-channel ANGLE, large ---
+        // Angle only (no "M1" tag), sized MARK_ANGLE_PX (2x the former
+        // headline-angle), clamped to the plot width and dropped near the
+        // plot floor. A white halo keeps it legible where it crosses traces.
+        val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = Color.WHITE
+            strokeWidth = 12f
+            strokeJoin = Paint.Join.ROUND
+            textAlign = Paint.Align.CENTER
+        }
         text.textAlign = Paint.Align.CENTER
-        text.textSize = 18f
-        result.marks.forEachIndexed { i, m ->
+        result.marks.forEach { m ->
             val x = sx(m.tMs)
+            stroke.color = COL_MARK
+            stroke.strokeWidth = 2f
             c.drawLine(x, plotTop, x, plotBottom, stroke)
+            fill.color = COL_MARK
             c.drawCircle(x, plotTop + 8f, 6f, fill)
-            c.drawText("M${i + 1}", x, plotTop - 6f, text)
+
+            val si = m.sampleIndex
+            if (si in samples.indices) {
+                val lbl = "${Math.round(channelValue(samples[si], result.primaryChannelIndex))}°"
+                text.textSize = MARK_ANGLE_PX
+                halo.textSize = MARK_ANGLE_PX
+                val halfW = text.measureText(lbl) / 2f
+                val tx = x.coerceIn(plotLeft + halfW + 6f, plotRight - halfW - 6f)
+                val ty = plotBottom - 20f
+                c.drawText(lbl, tx, ty, halo)
+                text.color = COL_MARK
+                text.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                c.drawText(lbl, tx, ty, text)
+                text.typeface = Typeface.DEFAULT
+            }
         }
         text.textAlign = Paint.Align.LEFT
+        text.color = COL_TEXT
 
         // --- Legend (top-right inside plot) ---
         val legendX = plotRight - 240f
@@ -187,24 +214,46 @@ object ChartRenderer {
         val peak = channelPeak(samples, result.primaryChannelIndex)
         val totalSweep = samples.maxOf { it.totalAngleDeg } - samples.minOf { it.totalAngleDeg }
 
-        text.color = COL_TEXT
-        text.textSize = 40f
-        text.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        c.drawText("${"%.1f".format(result.primaryRangeDeg)}°  ${result.primaryLabel}", MARGIN_L, capY0 + 34f, text)
+        // Supporting figures — left column, small. The "Range C" label is
+        // gone: the headline figure is now unambiguous on its own.
         text.typeface = Typeface.DEFAULT
-        text.textSize = 22f
+        text.textAlign = Paint.Align.LEFT
+        text.textSize = 24f
         text.color = COL_MUTED
-        c.drawText("lacks ${"%.0f".format(result.deficitToFullDeg)}° of full 180°", MARGIN_L, capY0 + 64f, text)
-        c.drawText(
-            result.secondaryChannels().joinToString("     ") { "${it.first} ${"%.1f".format(it.second)}°" },
-            MARGIN_L, capY0 + 92f, text,
-        )
-        c.drawText(
-            "peak ${"%.1f".format(peak.maxV)}° @ ${"%.1f".format(peak.maxTMs / 1000f)}s     " +
-                "min ${"%.1f".format(peak.minV)}° @ ${"%.1f".format(peak.minTMs / 1000f)}s     " +
+        val supLines = listOf(
+            "lacks ${"%.0f".format(result.deficitToFullDeg)}° of full 180°",
+            result.secondaryChannels().joinToString("      ") { "${it.first} ${"%.1f".format(it.second)}°" },
+            "peak ${"%.1f".format(peak.maxV)}° @ ${"%.1f".format(peak.maxTMs / 1000f)}s      " +
+                "min ${"%.1f".format(peak.minV)}° @ ${"%.1f".format(peak.minTMs / 1000f)}s      " +
                 "total sweep ${"%.1f".format(totalSweep)}° (cross-check)",
-            MARGIN_L, capY0 + 120f, text,
         )
+        supLines.forEachIndexed { i, s -> c.drawText(s, MARGIN_L, capY0 + 32f + i * 40f, text) }
+        val leftBlockW = supLines.maxOf { text.measureText(it) }
+
+        // Session id — small, bottom-left under the supporting figures
+        text.textSize = 18f
+        c.drawText(sessionName, MARGIN_L, HEIGHT_PX - 14f, text)
+
+        // Headline figure — moved to the empty bottom-right, sized to fill
+        // the caption band's height (capped only where the left column would
+        // otherwise be overlapped).
+        val bigLbl = "${"%.1f".format(result.primaryRangeDeg)}°"
+        text.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        var bigSize = (CAPTION_H - 22f) * 1.38f
+        text.textSize = bigSize
+        val bigAvailW = (WIDTH_PX - MARGIN_R) - (MARGIN_L + leftBlockW + 48f)
+        val bigW = text.measureText(bigLbl)
+        if (bigAvailW > 0f && bigW > bigAvailW) {
+            bigSize = (bigSize * bigAvailW / bigW).coerceAtLeast(44f)
+            text.textSize = bigSize
+        }
+        text.color = COL_PRIMARY
+        text.textAlign = Paint.Align.RIGHT
+        val fm = text.fontMetrics
+        val baseline = (HEIGHT_PX - CAPTION_H / 2f) - (fm.ascent + fm.descent) / 2f
+        c.drawText(bigLbl, WIDTH_PX - MARGIN_R, baseline, text)
+        text.textAlign = Paint.Align.LEFT
+        text.typeface = Typeface.DEFAULT
 
         return bmp
     }
